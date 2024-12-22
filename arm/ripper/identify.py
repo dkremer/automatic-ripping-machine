@@ -11,6 +11,8 @@ import json
 import pydvdid
 import xmltodict
 import arm.config.config as cfg
+import multiprocessing
+import time
 
 from arm.ripper import utils
 from arm.ui import db
@@ -55,7 +57,7 @@ def identify(job):
     # get_disc_type() checks local files, no need to run unless we can mount
     if mounted:
         # Check with the job class to get the correct disc type
-        job.get_disc_type(utils.find_file("HVDVD_TS", job.mountpoint))
+        job.get_disc_type( False )
 
     if job.disctype in ["dvd", "bluray"]:
 
@@ -134,6 +136,35 @@ def identify_bluray(job):
 
     return True
 
+def background_crc64(mount_point, dummy, result_queue):
+    logging.info(f"Function started with argument: {mount_point}")
+    try:
+        logging.info(f"Starting pydvdid.compute with {str(mount_point)}")
+        result = pydvdid.compute(mount_point)
+        logging.info(f"Task completed with {str(result)}")
+        result_queue.put(result)  # Send the result back via the queue
+    except Exception as e:
+        logging.error(f"Error: {e}")
+        result_queue.put(None)
+
+# Wrapper to run the function with a timeout
+def run_with_timeout(func, args=(), timeout=5):
+    result_queue = multiprocessing.Queue()  # Create a queue for the result
+    process = multiprocessing.Process(target=func, args=(*args, result_queue))
+    process.start()  # Start the process
+
+    process.join(timeout)  # Wait for the process to complete or timeout
+    if process.is_alive():  # Check if the process is still running
+        logging.info(f"Function timed out after {timeout} seconds. Terminating...")
+        process.terminate()  # Forcefully terminate the process
+        process.join()  # Ensure the process has fully terminated
+        return None  # Return None if the process was terminated
+    else:
+        # Retrieve the result from the queue
+        if not result_queue.empty():
+            return result_queue.get()
+        else:
+            return None  # Return None if no result was provided
 
 def identify_dvd(job):
     """ Manipulates the DVD title and calls OMDB to try and
@@ -144,33 +175,38 @@ def identify_dvd(job):
     if not job.label or job.label == "":
         job.label = "not identified"
     try:
-        crc64 = pydvdid.compute(str(job.mountpoint))
-        dvd_title = f"{job.label}_{crc64}"
-        logging.info(f"DVD CRC64 hash is: {crc64}")
-        job.crc_id = str(crc64)
-        urlstring = f"https://1337server.pythonanywhere.com/api/v1/?mode=s&crc64={crc64}"
-        logging.debug(urlstring)
-        dvd_info_xml = urllib.request.urlopen(urlstring).read()
-        arm_api_json = json.loads(dvd_info_xml)
-        logging.debug(f"dvd xml - {arm_api_json}")
-        logging.debug(f"results = {arm_api_json['results']}")
-        if arm_api_json['success']:
-            logging.info("Found crc64 id from online API")
-            logging.info(f"title is {arm_api_json['results']['0']['title']}")
-            args = {
-                'title': arm_api_json['results']['0']['title'],
-                'title_auto': arm_api_json['results']['0']['title'],
-                'year': arm_api_json['results']['0']['year'],
-                'year_auto': arm_api_json['results']['0']['year'],
-                'imdb_id': arm_api_json['results']['0']['imdb_id'],
-                'imdb_id_auto': arm_api_json['results']['0']['imdb_id'],
-                'video_type': arm_api_json['results']['0']['video_type'],
-                'video_type_auto': arm_api_json['results']['0']['video_type'],
-                'poster_url': arm_api_json['results']['0']['poster_img'],
-                'poster_url_auto': arm_api_json['results']['0']['poster_img'],
-                'hasnicetitle': True
-            }
+        logging.info("putting pydvdid.compute in background")
+        crc64 = run_with_timeout(background_crc64, args=(job.mountpoint, "dummy"), timeout=5)
+        logging.info(f"result: {crc64}")
+        if crc64:
+            dvd_title = f"{job.label}_{crc64}"
+            logging.info(f"DVD CRC64 hash is: {crc64}")
+            job.crc_id = str(crc64)
+            urlstring = f"https://1337server.pythonanywhere.com/api/v1/?mode=s&crc64={crc64}"
+            logging.debug(urlstring)
+            dvd_info_xml = urllib.request.urlopen(urlstring).read()
+            arm_api_json = json.loads(dvd_info_xml)
+            logging.debug(f"dvd xml - {arm_api_json}")
+            logging.debug(f"results = {arm_api_json['results']}")
+            if arm_api_json['success']:
+                logging.info("Found crc64 id from online API")
+                logging.info(f"title is {arm_api_json['results']['0']['title']}")
+                args = {
+                    'title': arm_api_json['results']['0']['title'],
+                    'title_auto': arm_api_json['results']['0']['title'],
+                    'year': arm_api_json['results']['0']['year'],
+                    'year_auto': arm_api_json['results']['0']['year'],
+                    'imdb_id': arm_api_json['results']['0']['imdb_id'],
+                    'imdb_id_auto': arm_api_json['results']['0']['imdb_id'],
+                    'video_type': arm_api_json['results']['0']['video_type'],
+                    'video_type_auto': arm_api_json['results']['0']['video_type'],
+                    'poster_url': arm_api_json['results']['0']['poster_img'],
+                    'poster_url_auto': arm_api_json['results']['0']['poster_img'],
+                    'hasnicetitle': True
+                }
             utils.database_updater(args, job)
+        else:
+            dvd_title = job.label
     except Exception as error:
         logging.error(f"Pydvdid failed with the error: {error}")
         dvd_title = str(job.label)

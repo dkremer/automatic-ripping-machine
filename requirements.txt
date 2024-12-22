@@ -6,3 +6,5 @@ colorama==0.4.6
 #requirements added for PR#650
 flake8==7.1.1
 waitress==2.1.2
+pydvdid~=1.1
+xmltodict~=0.14.2
