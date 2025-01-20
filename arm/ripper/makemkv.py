@@ -190,15 +190,7 @@ def setup_rawpath(job, raw_path):
         except OSError:
             err = f"Couldn't create the base file path: {raw_path}. Probably a permissions error"
             logging.error(err)
-    else:
-        logging.info(f"{raw_path} exists.  Adding timestamp.")
-        raw_path = os.path.join(str(job.config.RAW_PATH), f"{job.title}_{job.stage}")
-        logging.info(f"raw_path is {raw_path}")
-        try:
-            os.makedirs(raw_path)
-        except OSError:
-            err = f"Couldn't create the base file path: {raw_path}. Probably a permissions error"
-            raise OSError(err) from OSError
+
     return raw_path
 
 

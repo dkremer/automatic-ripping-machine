@@ -415,18 +415,13 @@ def rip_data(job):
     final_file_name = str(job.label)
 
     if (make_dir(raw_path)) is False:
-        random_time = str(round(time.time() * 100))
-        raw_path = os.path.join(job.config.RAW_PATH, str(job.label) + "_" + random_time)
-        final_file_name = f"{job.label}_{random_time}"
-        if (make_dir(raw_path)) is False:
-            logging.info(f"Could not create data directory: {raw_path}  Exiting ARM. ")
-            args = {'status': 'fail', 'errors': "Couldn't create data directory"}
-            database_updater(args, job)
-            sys.exit()
+        logging.info(f"Directory Exists: {raw_path}")
 
     final_path = os.path.join(final_path, final_file_name)
     incomplete_filename = os.path.join(raw_path, str(job.label) + ".part")
-    make_dir(final_path)
+    if (make_dir(final_path)) is False:
+        logging.info(f"Directory Exists: {final_path}")
+
     logging.info(f"Ripping data disc to: {incomplete_filename}")
     # Added from pull 366
     cmd = f'dd if="{job.devpath}" of="{incomplete_filename}" {cfg.arm_config["DATA_RIP_PARAMETERS"]} 2>> ' \
@@ -736,19 +731,7 @@ def check_for_dupe_folder(have_dupes, hb_out_path, job):
         # Or the successful rip of the disc is not found in our database
         logging.debug(f"Value of ALLOW_DUPLICATES: {cfg.arm_config['ALLOW_DUPLICATES']}")
         logging.debug(f"Value of have_dupes: {have_dupes}")
-        if cfg.arm_config["ALLOW_DUPLICATES"] or not have_dupes:
-            hb_out_path = hb_out_path + "_" + job.stage
-            if not (make_dir(hb_out_path)):
-                # We failed to make a random directory, most likely a permission issue
-                logging.exception(
-                    "A fatal error has occurred and ARM is exiting.  "
-                    "Couldn't create filesystem. Possible permission error")
-                notify(job, NOTIFY_TITLE,
-                       f"ARM encountered a fatal error processing {job.title}."
-                       f" Couldn't create filesystem. Possible permission error. ")
-                database_updater({'status': "fail", 'errors': 'Creating folder failed'}, job)
-                sys.exit()
-        else:
+        if not cfg.arm_config["ALLOW_DUPLICATES"] and have_dupes:
             # We aren't allowed to rip dupes, notify and exit
             logging.info("Duplicate rips are disabled.")
             notify(job, NOTIFY_TITLE, f"ARM Detected a duplicate disc. For {job.title}. "

@@ -21,6 +21,7 @@ from arm.ui import app, db
 from arm.ui.forms import ChangeParamsForm
 from arm.ui.utils import job_id_validator, database_updater, authenticated_state
 from arm.ui.settings import DriveUtils as drive_utils # noqa E402
+from arm.ripper import utils
 
 
 def get_notifications():
@@ -404,6 +405,9 @@ def abandon_job(job_id):
                                      f'Job with id: {job_id} was successfully abandoned. No files were deleted!')
         db.session.add(notification)
         db.session.commit()
+
+        utils.delete_raw_files([os.path.join(job.config.RAW_PATH, str(job.label))])
+
         json_return['success'] = True
         app.logger.debug(f"Job {job_id} was abandoned successfully")
         job.eject()

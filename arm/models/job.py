@@ -1,5 +1,7 @@
 import logging
 import os
+
+import datetime
 import psutil
 import pyudev
 import subprocess
@@ -74,7 +76,7 @@ class Job(db.Model):
             self.video_type = cfg.arm_config['VIDEOTYPE']
         self.parse_udev()
         self.get_pid()
-        self.stage = str(round(time.time() * 100))
+        self.stage = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
         self.manual_start = False
         self.manual_mode = False
 
